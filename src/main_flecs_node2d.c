@@ -43,8 +43,8 @@ typedef struct {
     Rectangle rect;
     // C-style string (char array)
     char text[256];
-} text2d_t;
-ECS_COMPONENT_DECLARE(text2d_t);
+} text_t;
+ECS_COMPONENT_DECLARE(text_t);
 
 typedef struct {
     Rectangle rect;
@@ -115,7 +115,7 @@ const int gridSize = 8; // Size of each grid cell in pixels
 Color gridColor = { 200, 200, 200, 255 }; // Light gray color
 
 void render2d_grid_system(ecs_iter_t *it){
-    DrawText("Test", 0, 0, 20, DARKGRAY);
+    // DrawText("Test", 0, 0, 20, DARKGRAY);
     // Draw vertical lines
     for (int x = 0; x <= screenWidth; x += gridSize)
     {
@@ -128,38 +128,106 @@ void render2d_grid_system(ecs_iter_t *it){
         DrawLine(0, y, screenWidth, y, gridColor);
     }
 }
+
+//===============================================
+// DRAW TEXT
+//===============================================
 // test draw
-void render2d_debug_system(ecs_iter_t *it){
-    DrawText("Test", 0, 0, 20, DARKGRAY);
-}
+// void render2d_debug_system(ecs_iter_t *it){
+//     DrawText("Test", 0, 0, 20, DARKGRAY);
+// }
+//===============================================
+// DRAW TEXT
+//===============================================
 // draw text
 void render2d_text_system(ecs_iter_t *it){
-    text2d_t *text2d = ecs_field(it, text2d_t, 0);
+    rect_t *rect = ecs_field(it, rect_t, 0);
+    text_t *text2d = ecs_field(it, text_t, 1);
     for (int i = 0; i < it->count; i++) {
         // ecs_entity_t entity = transform3d[i].id;
         // ecs_entity_t entity = it->entities[i];
-        DrawText(text2d[i].text, text2d[i].rect.x, text2d->rect.y, 20, DARKGRAY);
+        DrawText(text2d[i].text, rect[i].rect.x, rect[i].rect.y, 20, DARKGRAY);
     }
 }
 // rect text test
-void render2d_text_select_system(ecs_iter_t *it){
+// void render2d_text_select_system(ecs_iter_t *it){
+//     rect_t *rect = ecs_field(it, rect_t, 0);
+//     text_t *text2d = ecs_field(it, text_t, 1);
+//     for (int i = 0; i < it->count; i++) {
+//         // ecs_entity_t entity = transform3d[i].id;
+//         ecs_entity_t entity = it->entities[i];
+//         //DrawText(text2d[i].text, text2d[i].rect.x, text2d->rect.y, 20, DARKGRAY);
+//         // bool CheckCollisionPointRec(Vector2 point, Rectangle rec);
+//         // Vector2 GetMousePosition(void);
+//         if(IsMouseButtonPressed(MOUSE_BUTTON_LEFT)){
+//             if(CheckCollisionPointRec( GetMousePosition(),rect[i].rect)){
+//                 printf("found click\n");
+//             }
+//         }
+//         DrawRectangleLines(rect[i].rect.x,rect[i].rect.y,rect[i].rect.width,rect[i].rect.height, GRAY);
+//     }
+// }
+// text (drag mouse)
+void render2d_text_drag_system(ecs_iter_t *it) {
+    mouse_t *mouse = ecs_singleton_get_mut(it->world, mouse_t);
+    rect_t *rect = ecs_field(it, rect_t, 0);
+    text_t *text = ecs_field(it, text_t, 1);
 
-    text2d_t *text2d = ecs_field(it, text2d_t, 0);
-    for (int i = 0; i < it->count; i++) {
-        // ecs_entity_t entity = transform3d[i].id;
-        ecs_entity_t entity = it->entities[i];
-        //DrawText(text2d[i].text, text2d[i].rect.x, text2d->rect.y, 20, DARKGRAY);
-        // bool CheckCollisionPointRec(Vector2 point, Rectangle rec);
-        // Vector2 GetMousePosition(void);
-        if(IsMouseButtonPressed(MOUSE_BUTTON_LEFT)){
-            if(CheckCollisionPointRec( GetMousePosition(),text2d[i].rect)){
-                printf("found click\n");
+    // Get current mouse position
+    Vector2 mouse_pos = GetMousePosition();
+
+    // If a textbox is being dragged (mouse->id is set)
+    if (mouse->id) {
+        // Check if the mouse button is still held
+        if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+            // Update the textbox position based on mouse position and offset
+            rect_t *rect = ecs_get_mut(it->world, mouse->id, rect_t);
+            // text_box_t *selected_textbox = ecs_get_mut(it->world, mouse->id, text_box_t);
+
+            // if (selected_textbox) {
+                rect->rect.x = mouse_pos.x - mouse->off_set.x;
+                rect->rect.y = mouse_pos.y - mouse->off_set.y;
+                DrawRectangleLines(rect->rect.x,rect->rect.y,rect->rect.width,rect->rect.height, GREEN);
+                // ecs_modified(it->world, mouse->id, text_box_t); // Notify ECS of the change
+            // }
+        } else {
+            // Mouse button released, end drag
+            mouse->id = 0;
+            mouse->off_set = (Vector2){0, 0};
+            ecs_singleton_modified(it->world, mouse_t); // Notify ECS of mouse_t change
+        }
+    } else {
+        // No textbox is being dragged, check for new click
+        if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+            for (int i = 0; i < it->count; i++) {
+                ecs_entity_t entity = it->entities[i];
+                if (CheckCollisionPointRec(mouse_pos, rect[i].rect)) {
+                    // Start dragging this textbox
+                    mouse->id = entity;
+                    // Calculate offset from mouse to textbox top-left
+                    mouse->off_set.x = mouse_pos.x - rect[i].rect.x;
+                    mouse->off_set.y = mouse_pos.y - rect[i].rect.y;
+                    printf("Started dragging entity %llu\n", (unsigned long long)entity);
+                    ecs_singleton_modified(it->world, mouse_t); // Notify ECS of mouse_t change
+                    break; // Only drag one textbox at a time
+                }
             }
         }
-        DrawRectangleLines(text2d[i].rect.x,text2d[i].rect.y,text2d[i].rect.width,text2d[i].rect.height, GRAY);
-        
+
+        for (int i = 0; i < it->count; i++) {
+            ecs_entity_t entity = it->entities[i];
+            if (CheckCollisionPointRec(mouse_pos, rect[i].rect)) {
+                // Start draw this text rectangle
+                DrawRectangleLines(rect[i].rect.x,rect[i].rect.y,rect[i].rect.width,rect[i].rect.height, GRAY);
+                break; // Only drag one textbox at a time
+            }
+        }
     }
 }
+
+//===============================================
+// TEXT BOX
+//===============================================
 // text box (input text)
 void render2d_text_box_system(ecs_iter_t *it){
     rect_t *rect = ecs_field(it, rect_t, 0);
@@ -171,7 +239,7 @@ void render2d_text_box_system(ecs_iter_t *it){
     }
 }
 // text box (drag mouse)
-void render2d_rect_move_system(ecs_iter_t *it) {
+void render2d_text_box_drag_system(ecs_iter_t *it) {
     mouse_t *mouse = ecs_singleton_get_mut(it->world, mouse_t);
     rect_t *rect = ecs_field(it, rect_t, 0);
     text_box_t *text_box = ecs_field(it, text_box_t, 1);
@@ -217,23 +285,29 @@ void render2d_rect_move_system(ecs_iter_t *it) {
         }
     }
 }
+
+
 // check test
-void render2d_text_box_select_system(ecs_iter_t *it){
-    text2d_t *text2d = ecs_field(it, text2d_t, 0);
-    for (int i = 0; i < it->count; i++) {
-        // ecs_entity_t entity = transform3d[i].id;
-        ecs_entity_t entity = it->entities[i];
-        //DrawText(text2d[i].text, text2d[i].rect.x, text2d->rect.y, 20, DARKGRAY);
-        // bool CheckCollisionPointRec(Vector2 point, Rectangle rec);
-        // Vector2 GetMousePosition(void);
-        if(IsMouseButtonPressed(MOUSE_BUTTON_LEFT)){
-            if(CheckCollisionPointRec( GetMousePosition(),text2d[i].rect)){
-                printf("found click\n");
-            }
-        }
-        DrawRectangleLines(text2d[i].rect.x,text2d[i].rect.y,text2d[i].rect.width,text2d[i].rect.height, GRAY);
-    }
-}
+// void render2d_text_box_select_system(ecs_iter_t *it){
+//     text_t *text2d = ecs_field(it, text_t, 0);
+//     for (int i = 0; i < it->count; i++) {
+//         // ecs_entity_t entity = transform3d[i].id;
+//         ecs_entity_t entity = it->entities[i];
+//         //DrawText(text2d[i].text, text2d[i].rect.x, text2d->rect.y, 20, DARKGRAY);
+//         // bool CheckCollisionPointRec(Vector2 point, Rectangle rec);
+//         // Vector2 GetMousePosition(void);
+//         if(IsMouseButtonPressed(MOUSE_BUTTON_LEFT)){
+//             if(CheckCollisionPointRec( GetMousePosition(),text2d[i].rect)){
+//                 printf("found click\n");
+//             }
+//         }
+//         DrawRectangleLines(text2d[i].rect.x,text2d[i].rect.y,text2d[i].rect.width,text2d[i].rect.height, GRAY);
+//     }
+// }
+//===============================================
+// TEXT BOX
+//===============================================
+
 
 //===============================================
 //
@@ -247,7 +321,7 @@ int main(void) {
     ECS_COMPONENT_DEFINE(world, player_input_t);
     ECS_COMPONENT_DEFINE(world, main_context_t);
     ECS_COMPONENT_DEFINE(world, mouse_t);
-    ECS_COMPONENT_DEFINE(world, text2d_t);
+    ECS_COMPONENT_DEFINE(world, text_t);
     ECS_COMPONENT_DEFINE(world, rect_t);
     ECS_COMPONENT_DEFINE(world, text_box_t);
     
@@ -316,29 +390,43 @@ int main(void) {
       .callback = render2d_grid_system
     });
     // render 2d, debug
-    ecs_system(world, {
-      .entity = ecs_entity(world, { .name = "render2d_debug_system", .add = ecs_ids(ecs_dependson(RenderPhase)) }),
-    //   .query.terms = {
-    //     { .id = ecs_id(player_input_t), .src.id = ecs_id(player_input_t) } // Singleton
-    //   },
-      .callback = render2d_debug_system
-    });
+    // ecs_system(world, {
+    //   .entity = ecs_entity(world, { .name = "render2d_debug_system", .add = ecs_ids(ecs_dependson(RenderPhase)) }),
+    // //   .query.terms = {
+    // //     { .id = ecs_id(player_input_t), .src.id = ecs_id(player_input_t) } // Singleton
+    // //   },
+    //   .callback = render2d_debug_system
+    // });
     // render 2d, text
     ecs_system(world, {
       .entity = ecs_entity(world, { .name = "render2d_text_system", .add = ecs_ids(ecs_dependson(RenderPhase)) }),
       .query.terms = {
-        { .id = ecs_id(text2d_t)} // 
+        { .id = ecs_id(rect_t)}, // 
+        { .id = ecs_id(text_t)} // 
       },
       .callback = render2d_text_system
     });
     // render 2d, text select
+    // ecs_system(world, {
+    //   .entity = ecs_entity(world, { .name = "render2d_text_select_system", .add = ecs_ids(ecs_dependson(RenderPhase)) }),
+    //   .query.terms = {
+    //     { .id = ecs_id(rect_t)}, // 
+    //     { .id = ecs_id(text_t)} // 
+    //   },
+    //   .callback = render2d_text_select_system
+    // });
+
+    // render 2d, text drag
     ecs_system(world, {
-      .entity = ecs_entity(world, { .name = "render2d_text_select_system", .add = ecs_ids(ecs_dependson(RenderPhase)) }),
+      .entity = ecs_entity(world, { .name = "render2d_text_drag_system", .add = ecs_ids(ecs_dependson(RenderPhase)) }),
       .query.terms = {
-        { .id = ecs_id(text2d_t)} // 
+        { .id = ecs_id(rect_t)}, // 
+        { .id = ecs_id(text_t)} // 
       },
-      .callback = render2d_text_select_system
+      .callback = render2d_text_drag_system
     });
+
+
     // render 2d, text box
     ecs_system(world, {
       .entity = ecs_entity(world, { .name = "render2d_text_box_system", .add = ecs_ids(ecs_dependson(RenderPhase)) }),
@@ -350,12 +438,12 @@ int main(void) {
     });
     // render 2d, text box, move
     ecs_system(world, {
-      .entity = ecs_entity(world, { .name = "render2d_rect_move_system", .add = ecs_ids(ecs_dependson(RenderPhase)) }),
+      .entity = ecs_entity(world, { .name = "render2d_text_box_drag_system", .add = ecs_ids(ecs_dependson(RenderPhase)) }),
       .query.terms = {
         { .id = ecs_id(rect_t)}, // 
         { .id = ecs_id(text_box_t)} // 
       },
-      .callback = render2d_rect_move_system
+      .callback = render2d_text_box_drag_system
     });
 //===============================================
 // 
@@ -378,10 +466,14 @@ int main(void) {
 //===============================================
 
     ecs_entity_t text1 = ecs_new(world);
-    ecs_set(world, text1, text2d_t, {
-        .rect = (Rectangle){0,20,120,24},
+    ecs_set(world, text1, rect_t, {
+        .rect = (Rectangle){0,20,120,24}
+    });
+    ecs_set(world, text1, text_t, {
         .text = "flecs test!"
     });
+
+
 
     ecs_entity_t textbox1 = ecs_new(world);
     ecs_set(world, textbox1, rect_t, {
