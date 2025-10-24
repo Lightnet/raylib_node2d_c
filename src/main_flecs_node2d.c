@@ -14,6 +14,27 @@
 const int screenWidth = 800;
 const int screenHeight = 600;
 
+// PH
+typedef enum {
+    PIN_IN,
+    PIN_OUT
+} DIRECTION_PIN;
+
+// PH
+typedef enum {
+    PIN_NONE,
+    PIN_PLACE_HOLDER,
+    PIN_FLOW,
+    PIN_VARIABLE,
+    PIN_TIME,
+    PIN_TIMER,
+    PIN_TRIGGER,
+    PIN_FUNCTION
+} CONNECTOR_PIN; // CONNECTOR_PIN is now an alias for the enum type
+
+int pin_size = 10;
+int pin_space = 8;
+
 typedef struct {
   bool isMovementMode;
   bool tabPressed;
@@ -29,11 +50,14 @@ typedef struct {
     Vector2 off_set;
     bool drag;//resized?
     ecs_entity_t id;
+    bool is_creating_connector; // New: Are we creating a connector?
+    ecs_entity_t connector_start; // New: Start entity for connector
 } mouse_t;
 ECS_COMPONENT_DECLARE(mouse_t);
 
 typedef struct {
-    Camera3D camera;
+    Camera3D camera_3d;
+    Camera2D camera_2d;
 } main_context_t;
 ECS_COMPONENT_DECLARE(main_context_t);
 //===============================================
@@ -77,6 +101,26 @@ typedef struct {
 } color_picker_t;
 ECS_COMPONENT_DECLARE(color_picker_t);
 
+/// @brief testing.
+typedef struct {
+    ecs_entity_t in;
+    ecs_entity_t out;
+} connector_t;
+ECS_COMPONENT_DECLARE(connector_t);
+
+// connector pin need position from the parent rect to adjust.
+// required react
+typedef struct {
+    CONNECTOR_PIN pin;
+    DIRECTION_PIN dir;
+} connector_pin_t;
+ECS_COMPONENT_DECLARE(connector_pin_t);
+
+/*
+//========//
+[]  node  []
+*/
+
 
 //===============================================
 // RENDER
@@ -92,7 +136,7 @@ void BeginCamera3DSystem(ecs_iter_t *it) {
     // printf("BeginCamera3DSystem\n");
     main_context_t *main_context = ecs_field(it, main_context_t, 0); // Singleton
     if (!main_context) return;
-    BeginMode3D(main_context->camera);
+    BeginMode3D(main_context->camera_3d);
 }
 // end camera 3d
 void EndCamera3DSystem(ecs_iter_t *it) {
@@ -106,6 +150,19 @@ void EndRenderSystem(ecs_iter_t *it) {
   //printf("EndRenderSystem\n");
   EndDrawing();
 }
+
+// Update BeginCamera3DSystem:
+void BeginCamera2DSystem(ecs_iter_t *it) {
+    main_context_t *main_context = ecs_field(it, main_context_t, 0);
+    if (main_context) BeginMode2D(main_context->camera_2d);
+}
+// Update EndCamera3DSystem:
+void EndCamera2DSystem(ecs_iter_t *it) {
+    main_context_t *main_context = ecs_field(it, main_context_t, 0);
+    if (main_context) EndMode2D();
+}
+
+
 //===============================================
 // DRAW
 //===============================================
@@ -129,13 +186,6 @@ void render2d_grid_system(ecs_iter_t *it){
     }
 }
 
-//===============================================
-// DRAW TEXT
-//===============================================
-// test draw
-// void render2d_debug_system(ecs_iter_t *it){
-//     DrawText("Test", 0, 0, 20, DARKGRAY);
-// }
 //===============================================
 // DRAW TEXT
 //===============================================
@@ -286,7 +336,6 @@ void render2d_text_box_drag_system(ecs_iter_t *it) {
     }
 }
 
-
 // check test
 // void render2d_text_box_select_system(ecs_iter_t *it){
 //     text_t *text2d = ecs_field(it, text_t, 0);
@@ -308,6 +357,163 @@ void render2d_text_box_drag_system(ecs_iter_t *it) {
 // TEXT BOX
 //===============================================
 
+//===============================================
+// CONNECTORS
+//===============================================
+void render2d_connector_system(ecs_iter_t *it) {
+    connector_t *connector = ecs_field(it, connector_t, 0);
+    
+    for (int i = 0; i < it->count; i++) {
+        // Get the rect_t components of the in and out entities
+        rect_t *in_rect = ecs_get_mut(it->world, connector[i].in, rect_t);
+        rect_t *out_rect = ecs_get_mut(it->world, connector[i].out, rect_t);
+        
+        if (in_rect && out_rect) {
+            // Calculate the center points of the rectangles
+            Vector2 start = (Vector2){
+                in_rect->rect.x + in_rect->rect.width / 2,
+                in_rect->rect.y + in_rect->rect.height / 2
+            };
+            Vector2 end = (Vector2){
+                out_rect->rect.x + out_rect->rect.width / 2,
+                out_rect->rect.y + out_rect->rect.height / 2
+            };
+            // Draw a line between the centers
+            DrawLineV(start, end, BLACK);
+        }
+    }
+}
+
+// test
+// void connector_creation_system(ecs_iter_t *it) {
+//     mouse_t *mouse = ecs_singleton_get_mut(it->world, mouse_t);
+//     rect_t *rect = ecs_field(it, rect_t, 0);
+//     Vector2 mouse_pos = GetMousePosition();
+//     // Start connector creation with 'C' key
+//     if (IsKeyPressed(KEY_C)) {
+//         mouse->is_creating_connector = true;
+//         mouse->connector_start = 0;
+//         ecs_singleton_modified(it->world, mouse_t);
+//     }
+//     // Handle mouse clicks during connector creation
+//     if (mouse->is_creating_connector && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+//         for (int i = 0; i < it->count; i++) {
+//             ecs_entity_t entity = it->entities[i];
+//             if (CheckCollisionPointRec(mouse_pos, rect[i].rect)) {
+//                 if (mouse->connector_start == 0) {
+//                     // First node selected
+//                     mouse->connector_start = entity;
+//                     printf("Selected start node %llu\n", (unsigned long long)entity);
+//                 } else if (mouse->connector_start != entity) {
+//                     // Second node selected, create connector
+//                     ecs_entity_t connector = ecs_new(it->world);
+//                     ecs_set(it->world, connector, connector_t, {
+//                         .in = mouse->connector_start,
+//                         .out = entity
+//                     });
+//                     printf("Created connector from %llu to %llu\n",
+//                            (unsigned long long)mouse->connector_start,
+//                            (unsigned long long)entity);
+//                     // Reset connector creation state
+//                     mouse->is_creating_connector = false;
+//                     mouse->connector_start = 0;
+//                 }
+//                 ecs_singleton_modified(it->world, mouse_t);
+//                 break;
+//             }
+//         }
+//     }
+//     // Draw preview line during connector creation
+//     if (mouse->is_creating_connector && mouse->connector_start != 0) {
+//         rect_t *start_rect = ecs_get_mut(it->world, mouse->connector_start, rect_t);
+//         if (start_rect) {
+//             Vector2 start = (Vector2){
+//                 start_rect->rect.x + start_rect->rect.width / 2,
+//                 start_rect->rect.y + start_rect->rect.height / 2
+//             };
+//             DrawLineV(start, mouse_pos, BLUE); // Preview line
+//         }
+//     }
+// }
+
+void render_2d_draw_pins_system(ecs_iter_t *it){
+    rect_t *rect = ecs_field(it, rect_t, 0);
+    connector_pin_t *connector_pin = ecs_field(it, connector_pin_t, 1);
+
+    for (int i = 0; i < it->count; i++) {
+        ecs_entity_t entity = it->entities[i];
+        DrawRectangleLines(rect[i].rect.x,rect[i].rect.y,rect[i].rect.width,rect[i].rect.height, ORANGE);
+    }
+}
+//
+void connector_pin_creation_system(ecs_iter_t *it) {
+    mouse_t *mouse = ecs_singleton_get_mut(it->world, mouse_t);
+    rect_t *rect = ecs_field(it, rect_t, 0);
+    connector_pin_t *connector_pin = ecs_field(it, connector_pin_t, 1);
+    
+    Vector2 mouse_pos = GetMousePosition();
+
+    // Start connector creation with 'C' key
+    if (IsKeyPressed(KEY_C)) {
+        // if (mouse->is_creating_connector)
+        mouse->is_creating_connector = true;
+        mouse->connector_start = 0;
+        // ecs_singleton_modified(it->world, mouse_t);
+    }
+
+    // Handle mouse clicks during connector creation
+    if (mouse->is_creating_connector && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+        bool is_found = false;
+        for (int i = 0; i < it->count; i++) {
+            ecs_entity_t entity = it->entities[i];
+            if (CheckCollisionPointRec(mouse_pos, rect[i].rect)) {
+                if (mouse->connector_start == 0) {
+                    // First node selected
+                    mouse->connector_start = entity;
+                    printf("Selected start node %llu\n", (unsigned long long)entity);
+                    is_found = true;
+                } else if (mouse->connector_start != entity) {
+                    is_found = true;
+                    // Second node selected, create connector
+                    ecs_entity_t connector = ecs_new(it->world);
+                    ecs_set(it->world, connector, connector_t, {
+                        .in = mouse->connector_start,
+                        .out = entity
+                    });
+                    printf("Created connector from %llu to %llu\n",
+                           (unsigned long long)mouse->connector_start,
+                           (unsigned long long)entity);
+                    // Reset connector creation state
+                    mouse->is_creating_connector = false;
+                    mouse->connector_start = 0;
+                }
+                // ecs_singleton_modified(it->world, mouse_t);
+                break;
+            }
+        }
+        if(is_found == false){//not rect area close it.
+            mouse->is_creating_connector = false;
+            mouse->connector_start = 0;
+        }
+    }
+
+    // Draw preview line during connector creation
+    if (mouse->is_creating_connector && mouse->connector_start != 0) {
+        rect_t *start_rect = ecs_get_mut(it->world, mouse->connector_start, rect_t);
+        if (start_rect) {
+            Vector2 start = (Vector2){
+                start_rect->rect.x + start_rect->rect.width / 2,
+                start_rect->rect.y + start_rect->rect.height / 2
+            };
+            DrawLineV(start, mouse_pos, BLUE); // Preview line
+        }
+    }
+
+}
+
+
+
+
 
 //===============================================
 //
@@ -324,6 +530,9 @@ int main(void) {
     ECS_COMPONENT_DEFINE(world, text_t);
     ECS_COMPONENT_DEFINE(world, rect_t);
     ECS_COMPONENT_DEFINE(world, text_box_t);
+
+    ECS_COMPONENT_DEFINE(world, connector_t);
+    ECS_COMPONENT_DEFINE(world, connector_pin_t);
     
 
     // Define custom phases
@@ -333,6 +542,11 @@ int main(void) {
     ecs_entity_t BeginCamera3DPhase = ecs_new_w_id(world, EcsPhase);
     ecs_entity_t Camera3DPhase = ecs_new_w_id(world, EcsPhase);
     ecs_entity_t EndCamera3DPhase = ecs_new_w_id(world, EcsPhase);
+
+    ecs_entity_t BeginCamera2DPhase = ecs_new_w_id(world, EcsPhase);
+    ecs_entity_t Camera2DPhase = ecs_new_w_id(world, EcsPhase);
+    ecs_entity_t EndCamera2DPhase = ecs_new_w_id(world, EcsPhase);
+
     ecs_entity_t RenderPhase = ecs_new_w_id(world, EcsPhase);
     ecs_entity_t EndRenderPhase = ecs_new_w_id(world, EcsPhase);
 
@@ -340,10 +554,16 @@ int main(void) {
     ecs_add_pair(world, PreLogicUpdatePhase, EcsDependsOn, EcsPreUpdate); // start game logics
     ecs_add_pair(world, LogicUpdatePhase, EcsDependsOn, PreLogicUpdatePhase); // start game logics
     ecs_add_pair(world, BeginRenderPhase, EcsDependsOn, LogicUpdatePhase); // BeginDrawing
+
     ecs_add_pair(world, BeginCamera3DPhase, EcsDependsOn, BeginRenderPhase); // EcsOnUpdate, BeginMode3D
     ecs_add_pair(world, Camera3DPhase, EcsDependsOn, BeginCamera3DPhase); // 3d model only
     ecs_add_pair(world, EndCamera3DPhase, EcsDependsOn, Camera3DPhase); // EndMode3D
-    ecs_add_pair(world, RenderPhase, EcsDependsOn, EndCamera3DPhase); // 2D only
+
+    ecs_add_pair(world, BeginCamera2DPhase, EcsDependsOn, EndCamera3DPhase); // EcsOnUpdate, BeginMode2D
+    ecs_add_pair(world, Camera2DPhase, EcsDependsOn, BeginCamera2DPhase); // 2D model only
+    ecs_add_pair(world, EndCamera2DPhase, EcsDependsOn, Camera2DPhase); // EndMode2D
+
+    ecs_add_pair(world, RenderPhase, EcsDependsOn, EndCamera2DPhase); // 2D only
     ecs_add_pair(world, EndRenderPhase, EcsDependsOn, RenderPhase); // render to screen
 
     // note this has be in order of the ECS since push into array. From I guess.
@@ -445,22 +665,78 @@ int main(void) {
       },
       .callback = render2d_text_box_drag_system
     });
+
+//===============================================
+// CONNECTORS
+//===============================================
+
+    ecs_system(world, {
+        .entity = ecs_entity(world, { .name = "render2d_connector_system", .add = ecs_ids(ecs_dependson(RenderPhase)) }),
+        .query.terms = {
+            { .id = ecs_id(connector_t) }
+        },
+        .callback = render2d_connector_system
+    });
+
+    // ecs_system(world, {
+    //     .entity = ecs_entity(world, { .name = "connector_creation_system", .add = ecs_ids(ecs_dependson(LogicUpdatePhase)) }),
+    //     .query.terms = {
+    //         { .id = ecs_id(rect_t) }
+    //     },
+    //     .callback = connector_creation_system
+    // });
+
+
+    ecs_system(world, {
+        .entity = ecs_entity(world, { .name = "render_2d_draw_pins_system", .add = ecs_ids(ecs_dependson(LogicUpdatePhase)) }),
+        .query.terms = {
+            { .id = ecs_id(rect_t) },
+            { .id = ecs_id(connector_pin_t) }
+        },
+        .callback = render_2d_draw_pins_system
+    });
+
+    ecs_system(world, {
+        .entity = ecs_entity(world, { .name = "connector_pin_creation_system", .add = ecs_ids(ecs_dependson(LogicUpdatePhase)) }),
+        .query.terms = {
+            { .id = ecs_id(rect_t) },
+            { .id = ecs_id(connector_pin_t) },
+        },
+        .callback = connector_pin_creation_system
+    });
+
+
 //===============================================
 // 
 //===============================================
     // camera
-    Camera3D camera = {
+    Camera3D camera_3d = {
         .position = (Vector3){10.0f, 10.0f, 10.0f},
         .target = (Vector3){0.0f, 0.0f, 0.0f},
         .up = (Vector3){0.0f, 1.0f, 0.0f},
         .fovy = 45.0f,
         .projection = CAMERA_PERSPECTIVE
     };
+
+    Camera2D camera_2d = {
+        .offset = (Vector2){screenWidth / 2.0f, screenHeight / 2.0f},
+        .target = (Vector2){0.0f, 0.0f},
+        .rotation = 0.0f,
+        .zoom = 1.0f
+    };
     ecs_singleton_set(world, main_context_t, {
-        .camera = camera
+        .camera_3d = camera_3d,
+        .camera_2d = camera_2d
     });
     // mouse
-    ecs_singleton_set(world, mouse_t, {0});
+    ecs_singleton_set(world, mouse_t, {
+        .pos = {0, 0},
+        .off_set = {0, 0},
+        .drag = false,
+        .id = 0,
+        .is_creating_connector = false,
+        .connector_start = 0
+    });
 //===============================================
 // 
 //===============================================
@@ -483,6 +759,68 @@ int main(void) {
         // .rect = (Rectangle){0,50,120,24},
         .text = "flecs test!",
         .edit_mode = true
+    });
+
+    ecs_entity_t textbox2 = ecs_new(world);
+    ecs_set(world, textbox2, rect_t, {
+        .rect = (Rectangle){0,80,120,24},
+    });
+    ecs_set(world, textbox2, text_box_t, {
+        .text = "flecs test!2",
+        .edit_mode = true
+    });
+
+
+    ecs_entity_t connector1 = ecs_new(world);
+    ecs_set(world, connector1, connector_t, {
+        .in = text1,
+        .out = textbox1
+    });
+
+
+    ecs_entity_t connector_pin1 = ecs_new(world);
+    ecs_set(world, connector_pin1, rect_t, {
+        .rect = (Rectangle)
+        {
+            10,
+            100,
+            pin_size,
+            pin_size
+        }
+    });
+    ecs_set(world, connector_pin1, connector_pin_t, {
+        .pin = PIN_PLACE_HOLDER,
+        .dir = PIN_IN
+    });
+
+    ecs_entity_t connector_pin2 = ecs_new(world);
+    ecs_set(world, connector_pin2, rect_t, {
+        .rect = (Rectangle)
+        {
+            10,
+            200,
+            pin_size,
+            pin_size
+        }
+    });
+    ecs_set(world, connector_pin2, connector_pin_t, {
+        .pin = PIN_PLACE_HOLDER,
+        .dir = PIN_IN
+    });
+
+    ecs_entity_t connector_pin3 = ecs_new(world);
+    ecs_set(world, connector_pin3, rect_t, {
+        .rect = (Rectangle)
+        {
+            150,
+            250,
+            pin_size,
+            pin_size
+        }
+    });
+    ecs_set(world, connector_pin3, connector_pin_t, {
+        .pin = PIN_PLACE_HOLDER,
+        .dir = PIN_IN
     });
 
 //===============================================
