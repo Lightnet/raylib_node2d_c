@@ -10,6 +10,9 @@
 // #define RAYGUI_IMPLEMENTATION
 #include "raygui.h"
 
+// Define a debounce time interval (in seconds)
+#define DEBOUNCE_TIME 0.2f // 200 milliseconds
+
 // Initialize window
 const int screenWidth = 800;
 const int screenHeight = 600;
@@ -319,7 +322,6 @@ void EndRenderSystem(ecs_iter_t *it) {
   //printf("EndRenderSystem\n");
   EndDrawing();
 }
-
 // Update BeginCamera3DSystem:
 void BeginCamera2DSystem(ecs_iter_t *it) {
     main_context_t *main_context = ecs_field(it, main_context_t, 0);
@@ -353,6 +355,12 @@ void render2d_grid_system(ecs_iter_t *it){
         DrawLine(0, y, screenWidth, y, gridColor);
     }
 }
+
+void render2d_shortcut_key_system(ecs_iter_t *it){
+    DrawText("c Key = toggle connector",10,40,20, GRAY);
+}
+
+
 
 //===============================================
 // DRAW TEXT
@@ -389,7 +397,7 @@ void render2d_text_drag_system(ecs_iter_t *it) {
                     mouse->id = entity;
                     mouse->off_set.x = mouse_pos.x - transform[i].local_pos.x;
                     mouse->off_set.y = mouse_pos.y - transform[i].local_pos.y;
-                    printf("Started dragging entity %llu\n", (unsigned long long)entity);
+                    // printf("Started dragging entity %llu\n", (unsigned long long)entity);
                     ecs_singleton_modified(it->world, mouse_t);
                     break;
                 }
@@ -445,14 +453,14 @@ void update_connector_pins_system(ecs_iter_t *it){
             while (ecs_children_next(&cit)) {//child of node 2d for input and output pins
                 int in_pin = 0;
                 int out_pin = 0;
+                printf("PIN_IN: %d\n",  PIN_IN);
+                printf("PIN_OUT: %d\n",  PIN_OUT);
                 for (int j = 0; j < cit.count; j++) {
                     if(ecs_has(it->world,cit.entities[j], connector_pin_t)){
                         printf("found pin!\n");
                         const connector_pin_t *connector_pin = ecs_get(it->world,cit.entities[j], connector_pin_t);
                         transform_2d_t *transform_pin = ecs_get_mut(it->world,cit.entities[j], transform_2d_t);
-                        printf("connector_pin_t dir pin: %d\n",  connector_pin->dir);
-                        printf("in pin: %d\n",  PIN_IN);
-                        printf("out pin: %d\n",  PIN_OUT);
+                        printf("connector_pin_t dir pin: %d\n",  connector_pin->dir);                        
                         if(connector_pin->dir == PIN_IN){// left align border
                             transform_pin->local_pos.x = (pin_size + pin_space) * -1;
                             transform_pin->local_pos.y = ((pin_size + pin_space) * in_pin) ;
@@ -470,11 +478,8 @@ void update_connector_pins_system(ecs_iter_t *it){
             }
         }
     }
-
-
     ecs_query_fini(query);
 }
-
 
 //===============================================
 // TEXT BOX
@@ -502,7 +507,7 @@ void render2d_text_box_drag_system(ecs_iter_t *it) {
 
     // If a textbox is being dragged (mouse->id is set)
     if (mouse->id) {
-        printf("id: %d\n", mouse->id);
+        // printf("id: %d\n", mouse->id);
         // Check if the mouse button is still held
         if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
             // Update the textbox position based on mouse position and offset
@@ -574,7 +579,6 @@ void render2d_connector_system(ecs_iter_t *it) {
         }
     }
 }
-
 // draw pins
 void render_2d_draw_pins_system(ecs_iter_t *it){
     rect_t *rect = ecs_field(it, rect_t, 0);
@@ -593,17 +597,27 @@ void connector_pin_creation_system(ecs_iter_t *it) {
     
     Vector2 mouse_pos = GetMousePosition();
 
-    // Start connector creation with 'C' key
-    if (IsKeyPressed(KEY_C)) {
-        // if (mouse->is_creating_connector)
-        mouse->is_creating_connector = true;
-        mouse->connector_start = 0;
-        // ecs_singleton_modified(it->world, mouse_t);
+    // Static variable to track the last time the 'C' key was processed
+    static float last_key_press_time = 0.0f;
+    float current_time = GetTime(); // Get current time in seconds
+
+    // Start connector creation with 'C' key, with debounce
+    if (IsKeyPressed(KEY_C) && (current_time - last_key_press_time > DEBOUNCE_TIME)) {
+        // Update the last key press time
+        last_key_press_time = current_time;
+
+        // Toggle connector creation state
+        mouse->is_creating_connector = !mouse->is_creating_connector;
+        if (!mouse->is_creating_connector) {
+            mouse->connector_start = 0; // Reset start node when disabling
+        }
+        printf("is_creating_connector %d\n", mouse->is_creating_connector);
+        
+        // ecs_singleton_modified(it->world, mouse_t); // Uncomment if needed
     }
 
     // Handle mouse clicks during connector creation
     if (mouse->is_creating_connector && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-        bool is_found = false;
         for (int i = 0; i < it->count; i++) {
             ecs_entity_t entity = it->entities[i];
             if (CheckCollisionPointRec(mouse_pos, rect[i].rect)) {
@@ -611,9 +625,7 @@ void connector_pin_creation_system(ecs_iter_t *it) {
                     // First node selected
                     mouse->connector_start = entity;
                     printf("Selected start node %llu\n", (unsigned long long)entity);
-                    is_found = true;
                 } else if (mouse->connector_start != entity) {
-                    is_found = true;
                     // Second node selected, create connector
                     ecs_entity_t connector = ecs_new(it->world);
                     ecs_set(it->world, connector, connector_t, {
@@ -630,10 +642,6 @@ void connector_pin_creation_system(ecs_iter_t *it) {
                 // ecs_singleton_modified(it->world, mouse_t);
                 break;
             }
-        }
-        if(is_found == false){//not rect area close it.
-            mouse->is_creating_connector = false;
-            mouse->connector_start = 0;
         }
     }
 
@@ -658,8 +666,6 @@ void render_2d_connector_status_system(ecs_iter_t *it) {
     DrawText(TextFormat("Is Connector:  %s",mouse->is_creating_connector ? "TRUE" : "FALSE"),0,0,20,GRAY);
     // printf("render\n");
 }
-
-
 //===============================================
 // 
 //===============================================
@@ -780,7 +786,6 @@ void render_2d_transform_list_system(ecs_iter_t *it){
     RL_FREE(name_list);
     ecs_query_fini(query);
 }
-
 //===============================================
 // Node 2D Helper
 //===============================================
@@ -929,6 +934,13 @@ int main(void) {
     //   .entity = ecs_entity(world, { .name = "render2d_grid_system", .add = ecs_ids(ecs_dependson(RenderPhase)) }),
     //   .callback = render2d_grid_system
     // });
+
+
+    ecs_system(world, {
+      .entity = ecs_entity(world, { .name = "render2d_shortcut_key_system", .add = ecs_ids(ecs_dependson(RenderPhase)) }),
+      .callback = render2d_shortcut_key_system
+    });
+
     // render 2d, text
     ecs_system(world, {
       .entity = ecs_entity(world, { .name = "render2d_text_system", .add = ecs_ids(ecs_dependson(RenderPhase)) }),
@@ -974,13 +986,13 @@ int main(void) {
 // CONNECTORS
 //===============================================
 
-    // ecs_system(world, {
-    //     .entity = ecs_entity(world, { .name = "render2d_connector_system", .add = ecs_ids(ecs_dependson(RenderPhase)) }),
-    //     .query.terms = {
-    //         { .id = ecs_id(connector_t) }
-    //     },
-    //     .callback = render2d_connector_system
-    // });
+    ecs_system(world, {
+        .entity = ecs_entity(world, { .name = "render2d_connector_system", .add = ecs_ids(ecs_dependson(RenderPhase)) }),
+        .query.terms = {
+            { .id = ecs_id(connector_t) }
+        },
+        .callback = render2d_connector_system
+    });
 
     // ecs_system(world, {
     //     .entity = ecs_entity(world, { .name = "connector_creation_system", .add = ecs_ids(ecs_dependson(LogicUpdatePhase)) }),
@@ -1000,22 +1012,22 @@ int main(void) {
         .callback = render_2d_draw_pins_system
     });
 
-    // ecs_system(world, {
-    //     .entity = ecs_entity(world, { .name = "connector_pin_creation_system", .add = ecs_ids(ecs_dependson(LogicUpdatePhase)) }),
-    //     .query.terms = {
-    //         { .id = ecs_id(rect_t) },
-    //         { .id = ecs_id(connector_pin_t) },
-    //     },
-    //     .callback = connector_pin_creation_system
-    // });
+    ecs_system(world, {
+        .entity = ecs_entity(world, { .name = "connector_pin_creation_system", .add = ecs_ids(ecs_dependson(LogicUpdatePhase)) }),
+        .query.terms = {
+            { .id = ecs_id(rect_t) },
+            { .id = ecs_id(connector_pin_t) },
+        },
+        .callback = connector_pin_creation_system
+    });
 
-    // ecs_system(world, {
-    //     .entity = ecs_entity(world, { .name = "render_2d_connector_status_system", .add = ecs_ids(ecs_dependson(RenderPhase)) }),
-    //     .query.terms = {
-    //         { .id = ecs_id(mouse_t), .src.id = ecs_id(mouse_t)  }
-    //     },
-    //     .callback = render_2d_connector_status_system
-    // });
+    ecs_system(world, {
+        .entity = ecs_entity(world, { .name = "render_2d_connector_status_system", .add = ecs_ids(ecs_dependson(RenderPhase)) }),
+        .query.terms = {
+            { .id = ecs_id(mouse_t), .src.id = ecs_id(mouse_t)  }
+        },
+        .callback = render_2d_connector_status_system
+    });
 
 //===============================================
 // 
@@ -1195,6 +1207,44 @@ int main(void) {
     });
 
     ecs_add_pair(world, put_pin3, EcsChildOf, text3);
+
+
+
+
+
+    ecs_entity_t text4 = ecs_new(world);
+    ecs_set(world, text4, transform_2d_t, {
+        .local_pos = {260, 40}, 
+        .world_pos = {0, 0},
+        .local_scale = {1, 1},
+        .local_rotation = 0,
+        .world_rotation = 0,
+        .isDirty = true
+    });
+    ecs_set(world, text4, rect_t, {
+        .rect = (Rectangle){0,0,120,24}
+    });
+    ecs_set(world, text4, text_t, {
+        .text = "flecs test4!"
+    });
+
+    ecs_entity_t put_pin4 = ecs_new(world);
+    ecs_set(world, put_pin4, rect_t, {
+        .rect = (Rectangle){0,0, pin_size, pin_size}
+    });
+    ecs_set(world, put_pin4, transform_2d_t, {
+        .local_pos = {200, 200}, 
+        .world_pos = {0, 0},
+        .local_scale = {1, 1},
+        .local_rotation = 0,
+        .world_rotation = 0,
+        .isDirty = true
+    });
+    ecs_set(world, put_pin4, connector_pin_t, {
+        .pin = PIN_PLACE_HOLDER,
+        .dir = PIN_IN
+    });
+    // ecs_add_pair(world, put_pin4, EcsChildOf, text4);
     
 
 
