@@ -64,6 +64,8 @@ add_executable(${APP_NAME}
     # src/main.c
     # src/main_flecs.c
     src/main_flecs_node2d.c
+    # src/raylib2d_flecs_transform_hierarchy04.c
+    # src/raylib2d_flecs_transform_hierarchy05.c
     # src/raylib_jolt_contact.c
     # src/raylib_jolt_controller.c
 )
