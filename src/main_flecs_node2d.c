@@ -13,6 +13,10 @@
 // Initialize window
 const int screenWidth = 800;
 const int screenHeight = 600;
+
+ecs_entity_t event_update_pins;
+ecs_entity_t widget;
+
 //===============================================
 //
 //===============================================
@@ -56,7 +60,7 @@ typedef enum {
 } CONNECTOR_PIN; // CONNECTOR_PIN is now an alias for the enum type
 
 int pin_size = 10;
-int pin_space = 8;
+int pin_space = 4;
 
 typedef struct {
   bool isMovementMode;
@@ -397,7 +401,7 @@ void render2d_text_drag_system(ecs_iter_t *it) {
                     transform[i].local_pos.x = mouse_pos.x - mouse->off_set.x;
                     transform[i].local_pos.y = mouse_pos.y - mouse->off_set.y;
                     transform[i].isDirty = true;
-                    printf("pos x: %f y:%f\n", transform[i].world_pos.x, transform[i].world_pos.x);
+                    // printf("pos x: %f y:%f\n", transform[i].world_pos.x, transform[i].world_pos.x);
                     ecs_modified(it->world, it->entities[i], transform_2d_t);
                     break;
                 }
@@ -419,6 +423,56 @@ void render2d_text_drag_system(ecs_iter_t *it) {
         
         DrawRectangleLines(transform[i].world_pos.x, transform[i].world_pos.y, rect[i].rect.width, rect[i].rect.height, outline_color);
     }
+}
+
+void update_connector_pins_system(ecs_iter_t *it){
+    printf("checking pins!\n");
+
+    // Create a query for all entities with transform_2d_t
+    //query node 2d
+    ecs_query_t *query = ecs_query(it->world, {
+        .terms = {{ ecs_id(transform_2d_t) }}
+    });
+
+    ecs_iter_t t_it = ecs_query_iter(it->world, query);
+    while (ecs_query_next(&t_it)) {
+
+        for (int i = 0; i < t_it.count; i++) {
+            ecs_entity_t entity = t_it.entities[i];
+            const rect_t *rect = ecs_get(it->world,t_it.entities[i], rect_t); // node 2d
+
+            ecs_iter_t cit = ecs_children(it->world, entity);
+            while (ecs_children_next(&cit)) {//child of node 2d for input and output pins
+                int in_pin = 0;
+                int out_pin = 0;
+                for (int j = 0; j < cit.count; j++) {
+                    if(ecs_has(it->world,cit.entities[j], connector_pin_t)){
+                        printf("found pin!\n");
+                        const connector_pin_t *connector_pin = ecs_get(it->world,cit.entities[j], connector_pin_t);
+                        transform_2d_t *transform_pin = ecs_get_mut(it->world,cit.entities[j], transform_2d_t);
+                        printf("connector_pin_t dir pin: %d\n",  connector_pin->dir);
+                        printf("in pin: %d\n",  PIN_IN);
+                        printf("out pin: %d\n",  PIN_OUT);
+                        if(connector_pin->dir == PIN_IN){// left align border
+                            transform_pin->local_pos.x = (pin_size + pin_space) * -1;
+                            transform_pin->local_pos.y = ((pin_size + pin_space) * in_pin) ;
+                            in_pin++;
+                        }
+
+                        if(connector_pin->dir == PIN_OUT){// right align border
+                            transform_pin->local_pos.x = (pin_size/2 + pin_space/2) + rect->rect.width;
+                            transform_pin->local_pos.y = ((pin_size + pin_space) * out_pin);
+                            out_pin++;
+                        }
+
+                    }
+                }
+            }
+        }
+    }
+
+
+    ecs_query_fini(query);
 }
 
 
@@ -816,6 +870,9 @@ int main(void) {
     ecs_add_pair(world, EndRenderPhase, EcsDependsOn, RenderPhase); // render to screen
 
 
+    event_update_pins = ecs_new(world);
+    widget = ecs_entity(world, { .name = "widget" });
+
     // Transform system
     ecs_system(world, {
         .entity = ecs_entity(world, { 
@@ -933,15 +990,15 @@ int main(void) {
     //     .callback = connector_creation_system
     // });
 
-
-    // ecs_system(world, {
-    //     .entity = ecs_entity(world, { .name = "render_2d_draw_pins_system", .add = ecs_ids(ecs_dependson(LogicUpdatePhase)) }),
-    //     .query.terms = {
-    //         { .id = ecs_id(rect_t) },
-    //         { .id = ecs_id(connector_pin_t) }
-    //     },
-    //     .callback = render_2d_draw_pins_system
-    // });
+    // draw put pins
+    ecs_system(world, {
+        .entity = ecs_entity(world, { .name = "render_2d_draw_pins_system", .add = ecs_ids(ecs_dependson(LogicUpdatePhase)) }),
+        .query.terms = {
+            { .id = ecs_id(rect_t) },
+            { .id = ecs_id(connector_pin_t) }
+        },
+        .callback = render_2d_draw_pins_system
+    });
 
     // ecs_system(world, {
     //     .entity = ecs_entity(world, { .name = "connector_pin_creation_system", .add = ecs_ids(ecs_dependson(LogicUpdatePhase)) }),
@@ -984,6 +1041,14 @@ int main(void) {
         .callback = update_transform_2d_rect_system
     });
 
+    // Create an entity observer
+    ecs_observer(world, {
+        // Not interested in any specific component
+        .query.terms = {{ EcsAny, .src.id = widget }},
+        .events = { event_update_pins },
+        .callback = update_connector_pins_system
+    });
+
 
 //===============================================
 // 
@@ -1015,6 +1080,10 @@ int main(void) {
         .id = 0,
         .is_creating_connector = false,
         .connector_start = 0
+    });
+
+    ecs_singleton_set(world,transform_2d_select_t,{
+        .id = 0
     });
 //===============================================
 // 
@@ -1052,9 +1121,80 @@ int main(void) {
         .text = "flecs test2!"
     });
 
-    ecs_singleton_set(world,transform_2d_select_t,{
-        .id = 0
+
+    ecs_entity_t text3 = ecs_new(world);
+    ecs_set(world, text3, transform_2d_t, {
+        .local_pos = {200, 40}, 
+        .world_pos = {0, 0},
+        .local_scale = {1, 1},
+        .local_rotation = 0,
+        .world_rotation = 0,
+        .isDirty = true
     });
+    ecs_set(world, text3, rect_t, {
+        .rect = (Rectangle){0,0,120,24}
+    });
+    ecs_set(world, text3, text_t, {
+        .text = "flecs test3!"
+    });
+
+    ecs_entity_t put_pin1 = ecs_new(world);
+    ecs_set(world, put_pin1, rect_t, {
+        .rect = (Rectangle){0,0,pin_size,pin_size}
+    });
+    ecs_set(world, put_pin1, transform_2d_t, {
+        .local_pos = {-18, 8}, 
+        .world_pos = {0, 0},
+        .local_scale = {1, 1},
+        .local_rotation = 0,
+        .world_rotation = 0,
+        .isDirty = true
+    });
+    ecs_set(world, put_pin1, connector_pin_t, {
+        .pin = PIN_PLACE_HOLDER,
+        .dir = PIN_IN
+    });
+
+    ecs_add_pair(world, put_pin1, EcsChildOf, text3);
+
+
+    ecs_entity_t put_pin2 = ecs_new(world);
+    ecs_set(world, put_pin2, rect_t, {
+        .rect = (Rectangle){0,0,pin_size,pin_size}
+    });
+    ecs_set(world, put_pin2, transform_2d_t, {
+        .local_pos = {-18, 8}, 
+        .world_pos = {0, 0},
+        .local_scale = {1, 1},
+        .local_rotation = 0,
+        .world_rotation = 0,
+        .isDirty = true
+    });
+    ecs_set(world, put_pin2, connector_pin_t, {
+        .pin = PIN_PLACE_HOLDER,
+        .dir = PIN_IN
+    });
+
+    ecs_add_pair(world, put_pin2, EcsChildOf, text3);
+
+    ecs_entity_t put_pin3 = ecs_new(world);
+    ecs_set(world, put_pin3, rect_t, {
+        .rect = (Rectangle){0,0,pin_size,pin_size}
+    });
+    ecs_set(world, put_pin3, transform_2d_t, {
+        .local_pos = {-18, 8}, 
+        .world_pos = {0, 0},
+        .local_scale = {1, 1},
+        .local_rotation = 0,
+        .world_rotation = 0,
+        .isDirty = true
+    });
+    ecs_set(world, put_pin3, connector_pin_t, {
+        .pin = PIN_PLACE_HOLDER,
+        .dir = PIN_OUT
+    });
+
+    ecs_add_pair(world, put_pin3, EcsChildOf, text3);
     
 
 
@@ -1148,6 +1288,13 @@ int main(void) {
     //     .pin = PIN_PLACE_HOLDER,
     //     .dir = PIN_IN
     // });
+
+    // Emit entity event. Note how no component ids are provided.
+    ecs_emit(world, &(ecs_event_desc_t) {
+        .event = event_update_pins,
+        .entity = widget
+    });
+
 
 //===============================================
 // 
