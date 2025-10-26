@@ -156,7 +156,6 @@ ECS_COMPONENT_DECLARE(node_2d_t);
 //===============================================
 // Transform 3D
 //===============================================
-
 float NormalizeAngle(float degrees) {
     degrees = fmodf(degrees, 360.0f);
     if (degrees > 180.0f) {
@@ -166,7 +165,6 @@ float NormalizeAngle(float degrees) {
     }
     return degrees;
 }
-
 // Helper function to rotate a Vector2 around the origin by an angle (in degrees)
 Vector2 RotateVector2(Vector2 v, float degrees) {
     float radians = DEG2RAD * degrees;
@@ -177,7 +175,6 @@ Vector2 RotateVector2(Vector2 v, float degrees) {
         v.x * sin_r + v.y * cos_r
     };
 }
-
 // Helper function to update a single transform
 void UpdateTransform2D(ecs_world_t *world, ecs_entity_t entity, transform_2d_t *transform) {
     // Check if parent is dirty
@@ -238,7 +235,6 @@ void UpdateTransform2D(ecs_world_t *world, ecs_entity_t entity, transform_2d_t *
     // Reset isDirty
     transform->isDirty = false;
 }
-
 // Function to update a single entity and its descendants
 void UpdateChildTransform2DOnly(ecs_world_t *world, ecs_entity_t entity) {
     transform_2d_t *transform = ecs_get_mut(world, entity, transform_2d_t);
@@ -254,28 +250,9 @@ void UpdateChildTransform2DOnly(ecs_world_t *world, ecs_entity_t entity) {
         }
     }
 }
-
 // System to process all entities with transform_2d_t
 void update_transform_2d_system(ecs_iter_t *it) {
     transform_2d_t *transforms = ecs_field(it, transform_2d_t, 0);
-
-    // Update root entity's transform
-    // for testing
-    // for (int i = 0; i < it->count; i++) {
-    //     ecs_entity_t current_transform = it->entities[i];
-    //     if (!ecs_is_valid(it->world, current_transform)) {
-    //         continue;
-    //     }
-    //     transform_2d_t *transform = &transforms[i];
-    //     if (!ecs_get_parent(it->world, current_transform)) {
-    //         // transform->local_rotation = 60.0f * GetTime(); // Rotate at 60 degrees per second
-    //         transform->local_rotation = NormalizeAngle(60.0f * GetTime()); // Rotate at 60 degrees per second, normalized
-    //         transform->local_pos.x = 400 + 100 * sinf((float)GetTime()); // Oscillate horizontally
-    //         transform->local_pos.y = 300;
-    //         transform->isDirty = true;
-    //     }
-    // }
-
     // Update all entities hierarchically
     for (int i = 0; i < it->count; i++) {
         ecs_entity_t current_transform = it->entities[i];
@@ -295,7 +272,6 @@ void update_transform_2d_rect_system(ecs_iter_t *it){
        rect[i].rect.y = transforms[i].world_pos.y;
     }
 }
-
 //===============================================
 // RENDER
 //===============================================
@@ -550,10 +526,6 @@ void render2d_text_box_drag_system(ecs_iter_t *it) {
 }
 
 //===============================================
-// TEXT BOX
-//===============================================
-
-//===============================================
 // CONNECTORS
 //===============================================
 // draw 2d lines for connector
@@ -675,6 +647,7 @@ void render_2d_connector_status_system(ecs_iter_t *it) {
 //===============================================
 // 
 //===============================================
+// list transform 2d
 void render_2d_transform_list_system(ecs_iter_t *it){
     // Singleton
     transform_2d_select_t *transform_2d_select = ecs_field(it, transform_2d_select_t, 0);  // Field index 0
@@ -786,6 +759,14 @@ void render_2d_transform_list_system(ecs_iter_t *it){
                 transform->isDirty = true;
             }
         }
+
+        if(GuiButton((Rectangle){530,420,100,20}, "Delete")){
+            printf("add Input\n");
+            if(ecs_is_valid(it->world, transform_2d_select->id)){
+                ecs_delete(it->world, transform_2d_select->id);
+                transform_2d_select->id = 0;
+            }
+        }
     }
 
     // Clean up
@@ -797,10 +778,62 @@ void render_2d_transform_list_system(ecs_iter_t *it){
     RL_FREE(name_list);
     ecs_query_fini(query);
 }
+
+void render_2d_tool_add_system(ecs_iter_t *it){
+    if(GuiButton((Rectangle){0,40,100,20}, "Add Text")){
+        printf("add text\n");
+
+        ecs_entity_t text1 = ecs_new(it->world);
+        ecs_set(it->world, text1, transform_2d_t, {
+            .local_pos = {200, 20}, 
+            .world_pos = {0, 0},
+            .local_scale = {1, 1},
+            .local_rotation = 0,
+            .world_rotation = 0,
+            .isDirty = true
+        });
+        ecs_set(it->world, text1, rect_t, {
+            .rect = (Rectangle){0,0,120,24}
+        });
+        ecs_set(it->world, text1, text_t, {
+            .text = "test"
+        });
+    }
+    if(GuiButton((Rectangle){0,60,100,20}, "Add Text Box")){
+        printf("add Text Box\n");
+
+        ecs_entity_t textbox2 = ecs_new(it->world);
+        ecs_set(it->world, textbox2, rect_t, {
+            .rect = (Rectangle){0,0,120,24},
+        });
+        ecs_set(it->world, textbox2, transform_2d_t, {
+            .local_pos = {200, 80}, 
+            .world_pos = {0, 0},
+            .local_scale = {1, 1},
+            .local_rotation = 0,
+            .world_rotation = 0,
+            .isDirty = true
+        });
+        ecs_set(it->world, textbox2, text_box_t, {
+            .text = "test box",
+            .edit_mode = true
+        });
+
+    }
+
+    if(GuiButton((Rectangle){0,80,100,20}, "Add Input")){
+        printf("add Input\n");
+    }
+
+    if(GuiButton((Rectangle){0,100,100,20}, "Add output")){
+        printf("add output\n");
+    }
+}
+
+
 //===============================================
 // Node 2D Helper
 //===============================================
-
 ecs_entity_t create_node2d_text(ecs_world_t *world, float x, float y, char *text) {
     ecs_entity_t entity = ecs_new(world);
     ecs_set(world, entity, rect_t, {
@@ -847,13 +880,11 @@ int main(void) {
     ECS_COMPONENT_DEFINE(world, text_t);
     ECS_COMPONENT_DEFINE(world, rect_t);
     ECS_COMPONENT_DEFINE(world, text_box_t);
-
     ECS_COMPONENT_DEFINE(world, connector_t);
     ECS_COMPONENT_DEFINE(world, connector_pin_t);
     ECS_COMPONENT_DEFINE(world, transform_2d_t);
     ECS_COMPONENT_DEFINE(world, transform_2d_select_t);
     
-
     // Define custom phases
     ecs_entity_t PreLogicUpdatePhase = ecs_new_w_id(world, EcsPhase);
     ecs_entity_t LogicUpdatePhase = ecs_new_w_id(world, EcsPhase);
@@ -861,11 +892,9 @@ int main(void) {
     ecs_entity_t BeginCamera3DPhase = ecs_new_w_id(world, EcsPhase);
     ecs_entity_t Camera3DPhase = ecs_new_w_id(world, EcsPhase);
     ecs_entity_t EndCamera3DPhase = ecs_new_w_id(world, EcsPhase);
-
     ecs_entity_t BeginCamera2DPhase = ecs_new_w_id(world, EcsPhase);
     ecs_entity_t Camera2DPhase = ecs_new_w_id(world, EcsPhase);
     ecs_entity_t EndCamera2DPhase = ecs_new_w_id(world, EcsPhase);
-
     ecs_entity_t RenderPhase = ecs_new_w_id(world, EcsPhase);
     ecs_entity_t EndRenderPhase = ecs_new_w_id(world, EcsPhase);
 
@@ -885,7 +914,6 @@ int main(void) {
     ecs_add_pair(world, RenderPhase, EcsDependsOn, EndCamera2DPhase); // 2D only
     ecs_add_pair(world, EndRenderPhase, EcsDependsOn, RenderPhase); // render to screen
 
-
     event_update_pins = ecs_new(world);
     widget = ecs_entity(world, { .name = "widget" });
 
@@ -900,8 +928,6 @@ int main(void) {
         },
         .callback = update_transform_2d_system
     });
-
-
     // note this has be in order of the ECS since push into array. From I guess.
     // Render
     ecs_system(world,{
@@ -948,10 +974,14 @@ int main(void) {
 
 
     ecs_system(world, {
+      .entity = ecs_entity(world, { .name = "render_2d_tool_add_system", .add = ecs_ids(ecs_dependson(RenderPhase)) }),
+      .callback = render_2d_tool_add_system
+    });
+
+    ecs_system(world, {
       .entity = ecs_entity(world, { .name = "render2d_shortcut_key_system", .add = ecs_ids(ecs_dependson(RenderPhase)) }),
       .callback = render2d_shortcut_key_system
     });
-
     // render 2d, text
     ecs_system(world, {
       .entity = ecs_entity(world, { .name = "render2d_text_system", .add = ecs_ids(ecs_dependson(RenderPhase)) }),
@@ -971,7 +1001,6 @@ int main(void) {
       },
       .callback = render2d_text_drag_system
     });
-
     // render 2d, text box
     ecs_system(world, {
       .entity = ecs_entity(world, { .name = "render2d_text_box_system", .add = ecs_ids(ecs_dependson(RenderPhase)) }),
@@ -992,11 +1021,9 @@ int main(void) {
       },
       .callback = render2d_text_box_drag_system
     });
-
 //===============================================
 // CONNECTORS
 //===============================================
-
     ecs_system(world, {
         .entity = ecs_entity(world, { .name = "render2d_connector_system", .add = ecs_ids(ecs_dependson(RenderPhase)) }),
         .query.terms = {
@@ -1004,15 +1031,6 @@ int main(void) {
         },
         .callback = render2d_connector_system
     });
-
-    // ecs_system(world, {
-    //     .entity = ecs_entity(world, { .name = "connector_creation_system", .add = ecs_ids(ecs_dependson(LogicUpdatePhase)) }),
-    //     .query.terms = {
-    //         { .id = ecs_id(rect_t) }
-    //     },
-    //     .callback = connector_creation_system
-    // });
-
     // draw put pins
     ecs_system(world, {
         .entity = ecs_entity(world, { .name = "render_2d_draw_pins_system", .add = ecs_ids(ecs_dependson(LogicUpdatePhase)) }),
@@ -1022,7 +1040,6 @@ int main(void) {
         },
         .callback = render_2d_draw_pins_system
     });
-
     ecs_system(world, {
         .entity = ecs_entity(world, { .name = "connector_pin_creation_system", .add = ecs_ids(ecs_dependson(LogicUpdatePhase)) }),
         .query.terms = {
@@ -1031,7 +1048,6 @@ int main(void) {
         },
         .callback = connector_pin_creation_system
     });
-
     ecs_system(world, {
         .entity = ecs_entity(world, { .name = "render_2d_connector_status_system", .add = ecs_ids(ecs_dependson(RenderPhase)) }),
         .query.terms = {
@@ -1039,11 +1055,10 @@ int main(void) {
         },
         .callback = render_2d_connector_status_system
     });
-
 //===============================================
 // 
 //===============================================
-
+    // list transform 2d
     ecs_system(world, {
         .entity = ecs_entity(world, { .name = "render_2d_transform_list_system", .add = ecs_ids(ecs_dependson(RenderPhase)) }),
         .query.terms = {
@@ -1052,8 +1067,7 @@ int main(void) {
         },
         .callback = render_2d_transform_list_system
     });
-
-
+    // sync transform to rect
     ecs_system(world, {
         .entity = ecs_entity(world, { .name = "update_transform_2d_rect_system", .add = ecs_ids(ecs_dependson(RenderPhase)) }),
         .query.terms = {
@@ -1063,20 +1077,17 @@ int main(void) {
         },
         .callback = update_transform_2d_rect_system
     });
-
-    // Create an entity observer
+    // Create an entity observer, event listen to update pin position
     ecs_observer(world, {
         // Not interested in any specific component
         .query.terms = {{ EcsAny, .src.id = widget }},
         .events = { event_update_pins },
         .callback = update_connector_pins_system
     });
-
-
 //===============================================
 // 
 //===============================================
-    // camera
+    // camera 3d
     Camera3D camera_3d = {
         .position = (Vector3){10.0f, 10.0f, 10.0f},
         .target = (Vector3){0.0f, 0.0f, 0.0f},
@@ -1084,7 +1095,7 @@ int main(void) {
         .fovy = 45.0f,
         .projection = CAMERA_PERSPECTIVE
     };
-
+    // camera 2d
     Camera2D camera_2d = {
         .offset = (Vector2){screenWidth / 2.0f, screenHeight / 2.0f},
         .target = (Vector2){0.0f, 0.0f},
@@ -1095,7 +1106,7 @@ int main(void) {
         .camera_3d = camera_3d,
         .camera_2d = camera_2d
     });
-    // mouse
+    // mouse config
     ecs_singleton_set(world, mouse_t, {
         .pos = {0, 0},
         .off_set = {0, 0},
@@ -1105,7 +1116,7 @@ int main(void) {
         .connector_start = 0,
         .connector_id = 0
     });
-
+    // select transform 2d
     ecs_singleton_set(world,transform_2d_select_t,{
         .id = 0
     });
@@ -1115,7 +1126,7 @@ int main(void) {
 
     ecs_entity_t text1 = ecs_new(world);
     ecs_set(world, text1, transform_2d_t, {
-        .local_pos = {10, 20}, 
+        .local_pos = {200, 20}, 
         .world_pos = {0, 0},
         .local_scale = {1, 1},
         .local_rotation = 0,
@@ -1131,7 +1142,7 @@ int main(void) {
     
     ecs_entity_t text2 = ecs_new(world);
     ecs_set(world, text2, transform_2d_t, {
-        .local_pos = {0, 40}, 
+        .local_pos = {200, 40}, 
         .world_pos = {0, 0},
         .local_scale = {1, 1},
         .local_rotation = 0,
@@ -1271,7 +1282,7 @@ int main(void) {
     //     .edit_mode = true
     // });
 
-    ecs_entity_t textbox1 = create_node2d_text(world, 10, 50,"Hello Flecs!");
+    ecs_entity_t textbox1 = create_node2d_text(world, 200, 50,"Hello Flecs!");
     // ecs_set(world, textbox1, transform_2d_t, {
     //     .local_pos = {10, 50}, 
     //     .world_pos = {10, 50},
@@ -1287,7 +1298,7 @@ int main(void) {
         .rect = (Rectangle){0,0,120,24},
     });
     ecs_set(world, textbox2, transform_2d_t, {
-        .local_pos = {0, 80}, 
+        .local_pos = {200, 80}, 
         .world_pos = {0, 0},
         .local_scale = {1, 1},
         .local_rotation = 0,
