@@ -81,6 +81,7 @@ typedef struct {
     Vector2 off_set;
     bool drag;//resized?
     ecs_entity_t id;
+    ecs_entity_t connector_id;
     bool is_creating_connector; // New: Are we creating a connector?
     ecs_entity_t connector_start; // New: Start entity for connector
 } mouse_t;
@@ -557,9 +558,16 @@ void render2d_text_box_drag_system(ecs_iter_t *it) {
 //===============================================
 // draw 2d lines for connector
 void render2d_connector_system(ecs_iter_t *it) {
+    mouse_t *mouse = ecs_singleton_get_mut(it->world, mouse_t);
     connector_t *connector = ecs_field(it, connector_t, 0);
 
     Vector2 mouse_pos = GetMousePosition();
+    if(IsKeyPressed(KEY_DELETE)){
+        if(ecs_is_valid(it->world, mouse->connector_id)){
+            ecs_delete(it->world, mouse->connector_id);
+            mouse->connector_id = 0;
+        }
+    }
     
     for (int i = 0; i < it->count; i++) {
         // Get the rect_t components of the in and out entities
@@ -581,8 +589,10 @@ void render2d_connector_system(ecs_iter_t *it) {
             bool collision = CheckCollisionPointLine(mouse_pos, start, end, (int)lineThickness);
             DrawLineV(start, end, collision ? RED : BLACK);
             // DrawLineEx(lineStart, lineEnd, lineThickness, collision ? RED : BLACK);
-            if(IsMouseButtonDown(MOUSE_BUTTON_LEFT) && collision){
+            if(IsMouseButtonDown(MOUSE_BUTTON_LEFT) && collision && mouse->id == 0){
                 printf("connector selected\n");
+                printf("entity id: %d\n", it->entities[i]);
+                mouse->connector_id = it->entities[i];
             }
         }
     }
@@ -692,7 +702,12 @@ void render_2d_transform_list_system(ecs_iter_t *it){
         for (int j = 0; j < transform_it.count; j++) {
             const char *name = ecs_get_name(it->world, transform_it.entities[j]);
             entity_names[index] = (char *)RL_MALLOC(256 * sizeof(char));
-            snprintf(entity_names[index], 256, "%s", name ? name : "(unnamed)");
+            // snprintf(entity_names[index], 256, "%s", name ? name : "(unnamed)");
+            if (name) {
+                snprintf(entity_names[index], 256, "%s", name);
+            } else {
+                snprintf(entity_names[index], 256, "(unnamed) id: %llu", transform_it.entities[j]);
+            }
             entity_ids[index] = transform_it.entities[j];
             index++;
         }
@@ -1087,7 +1102,8 @@ int main(void) {
         .drag = false,
         .id = 0,
         .is_creating_connector = false,
-        .connector_start = 0
+        .connector_start = 0,
+        .connector_id = 0
     });
 
     ecs_singleton_set(world,transform_2d_select_t,{
