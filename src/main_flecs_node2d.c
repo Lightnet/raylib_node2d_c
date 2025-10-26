@@ -11,7 +11,8 @@
 #include "raygui.h"
 
 // Define a debounce time interval (in seconds)
-#define DEBOUNCE_TIME 0.2f // 200 milliseconds
+// #define DEBOUNCE_TIME 0.2f // 200 milliseconds
+float lineThickness = 5.0f; // Initial line thickness
 
 // Initialize window
 const int screenWidth = 800;
@@ -357,10 +358,8 @@ void render2d_grid_system(ecs_iter_t *it){
 }
 
 void render2d_shortcut_key_system(ecs_iter_t *it){
-    DrawText("c Key = toggle connector",10,40,20, GRAY);
+    // DrawText("c Key = toggle connector", 8, 20, 20, GRAY);
 }
-
-
 
 //===============================================
 // DRAW TEXT
@@ -556,8 +555,11 @@ void render2d_text_box_drag_system(ecs_iter_t *it) {
 //===============================================
 // CONNECTORS
 //===============================================
+// draw 2d lines for connector
 void render2d_connector_system(ecs_iter_t *it) {
     connector_t *connector = ecs_field(it, connector_t, 0);
+
+    Vector2 mouse_pos = GetMousePosition();
     
     for (int i = 0; i < it->count; i++) {
         // Get the rect_t components of the in and out entities
@@ -575,7 +577,13 @@ void render2d_connector_system(ecs_iter_t *it) {
                 out_rect->rect.y + out_rect->rect.height / 2
             };
             // Draw a line between the centers
-            DrawLineV(start, end, BLACK);
+            // Check collision between mouse and line
+            bool collision = CheckCollisionPointLine(mouse_pos, start, end, (int)lineThickness);
+            DrawLineV(start, end, collision ? RED : BLACK);
+            // DrawLineEx(lineStart, lineEnd, lineThickness, collision ? RED : BLACK);
+            if(IsMouseButtonDown(MOUSE_BUTTON_LEFT) && collision){
+                printf("connector selected\n");
+            }
         }
     }
 }
@@ -597,35 +605,19 @@ void connector_pin_creation_system(ecs_iter_t *it) {
     
     Vector2 mouse_pos = GetMousePosition();
 
-    // Static variable to track the last time the 'C' key was processed
-    static float last_key_press_time = 0.0f;
-    float current_time = GetTime(); // Get current time in seconds
-
-    // Start connector creation with 'C' key, with debounce
-    if (IsKeyPressed(KEY_C) && (current_time - last_key_press_time > DEBOUNCE_TIME)) {
-        // Update the last key press time
-        last_key_press_time = current_time;
-
-        // Toggle connector creation state
-        mouse->is_creating_connector = !mouse->is_creating_connector;
-        if (!mouse->is_creating_connector) {
-            mouse->connector_start = 0; // Reset start node when disabling
-        }
-        printf("is_creating_connector %d\n", mouse->is_creating_connector);
-        
-        // ecs_singleton_modified(it->world, mouse_t); // Uncomment if needed
-    }
-
-    // Handle mouse clicks during connector creation
-    if (mouse->is_creating_connector && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+    //check if the pin react else deselect connector.
+    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+        bool is_hit = false;
         for (int i = 0; i < it->count; i++) {
             ecs_entity_t entity = it->entities[i];
             if (CheckCollisionPointRec(mouse_pos, rect[i].rect)) {
-                if (mouse->connector_start == 0) {
+                is_hit = true;
+                if (mouse->connector_start == false) {//check if forst point 1
+                    mouse->is_creating_connector = true;
                     // First node selected
                     mouse->connector_start = entity;
                     printf("Selected start node %llu\n", (unsigned long long)entity);
-                } else if (mouse->connector_start != entity) {
+                } else if (mouse->connector_start != entity) {//check if entity in rect to set point 2
                     // Second node selected, create connector
                     ecs_entity_t connector = ecs_new(it->world);
                     ecs_set(it->world, connector, connector_t, {
@@ -642,6 +634,10 @@ void connector_pin_creation_system(ecs_iter_t *it) {
                 // ecs_singleton_modified(it->world, mouse_t);
                 break;
             }
+        }
+        if(!is_hit){// if out side of pin rect deselect
+            mouse->is_creating_connector = false;
+            mouse->connector_start = 0;
         }
     }
 
@@ -663,7 +659,7 @@ void render_2d_connector_status_system(ecs_iter_t *it) {
     // mouse_t *mouse = ecs_singleton_get_mut(it->world, mouse_t);
     // connector_pin_t *connector_pin = ecs_field(it, connector_pin_t, 1);
     mouse_t *mouse = ecs_field(it, mouse_t, 0);
-    DrawText(TextFormat("Is Connector:  %s",mouse->is_creating_connector ? "TRUE" : "FALSE"),0,0,20,GRAY);
+    DrawText(TextFormat("Is Connector: %s", mouse->is_creating_connector ? "TRUE" : "FALSE"),8,0,20,GRAY);
     // printf("render\n");
 }
 //===============================================
@@ -1103,7 +1099,7 @@ int main(void) {
 
     ecs_entity_t text1 = ecs_new(world);
     ecs_set(world, text1, transform_2d_t, {
-        .local_pos = {0, 20}, 
+        .local_pos = {10, 20}, 
         .world_pos = {0, 0},
         .local_scale = {1, 1},
         .local_rotation = 0,
@@ -1136,7 +1132,7 @@ int main(void) {
 
     ecs_entity_t text3 = ecs_new(world);
     ecs_set(world, text3, transform_2d_t, {
-        .local_pos = {200, 40}, 
+        .local_pos = {200, 60}, 
         .world_pos = {0, 0},
         .local_scale = {1, 1},
         .local_rotation = 0,
@@ -1214,7 +1210,7 @@ int main(void) {
 
     ecs_entity_t text4 = ecs_new(world);
     ecs_set(world, text4, transform_2d_t, {
-        .local_pos = {260, 40}, 
+        .local_pos = {260, 80}, 
         .world_pos = {0, 0},
         .local_scale = {1, 1},
         .local_rotation = 0,
